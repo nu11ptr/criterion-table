@@ -103,15 +103,14 @@ impl RawCriterionData {
 // ### Column Info ###
 
 #[derive(Clone, Debug)]
-struct ColumnInfo {
-    #[allow(dead_code)]
-    name: FlexStr,
-    max_width: u32,
+pub struct ColumnInfo {
+    pub name: FlexStr,
+    pub max_width: usize,
 }
 
 impl ColumnInfo {
     #[inline]
-    pub fn new(name: FlexStr, width: u32) -> Self {
+    pub fn new(name: FlexStr, width: usize) -> Self {
         Self {
             name,
             max_width: width,
@@ -119,7 +118,7 @@ impl ColumnInfo {
     }
 
     #[inline]
-    pub fn update_info(&mut self, width: u32) {
+    fn update_info(&mut self, width: usize) {
         self.max_width = max(self.max_width, width);
     }
 }
@@ -127,7 +126,7 @@ impl ColumnInfo {
 // ### Time Unit ###
 
 #[derive(Clone, Copy, Debug)]
-enum TimeUnit {
+pub enum TimeUnit {
     Second(f64),
     Millisecond(f64),
     Microsecond(f64),
@@ -148,8 +147,8 @@ impl TimeUnit {
     }
 
     #[inline]
-    pub fn width(&self) -> u32 {
-        self.to_flex_str().len() as u32
+    pub fn width(&self) -> usize {
+        self.to_flex_str().len()
     }
 
     fn as_picoseconds(&self) -> f64 {
@@ -188,19 +187,19 @@ impl ToFlexStr for TimeUnit {
 // ### Percent ###
 
 #[derive(Clone, Copy, Debug, Default)]
-struct Percent(f64);
+pub struct Percent(f64);
 
 impl Percent {
     #[inline]
-    pub fn width(self) -> u32 {
-        self.to_flex_str().len() as u32
+    pub fn width(self) -> usize {
+        self.to_flex_str().len()
     }
 }
 
 impl ToFlexStr for Percent {
     #[inline]
     fn to_flex_str(&self) -> FlexStr {
-        flex_fmt!("{:.2}%", self.0)
+        flex_fmt!("{:.2}%", self.0 * 100.0)
     }
 }
 
@@ -232,7 +231,7 @@ impl Column {
     // formatted we return width of: TimeUnit + Percent. Any additional spaces or formatting chars
     // are not considered and must be added by the formatter
     #[inline]
-    pub fn width(&self) -> u32 {
+    pub fn width(&self) -> usize {
         self.time_unit.width() + self.pct.width()
     }
 }
@@ -282,7 +281,7 @@ impl Row {
 struct ColumnInfoMap(IndexMap<FlexStr, ColumnInfo>);
 
 impl ColumnInfoMap {
-    pub fn update_column_info(&mut self, name: FlexStr, width: u32) {
+    pub fn update_column_info(&mut self, name: FlexStr, width: usize) {
         match self.0.entry(name.clone()) {
             // If already exists, then just update with our width data
             Entry::Occupied(entry) => {
@@ -322,9 +321,15 @@ impl Table {
         row_name: FlexStr,
         time: TimeUnit,
     ) -> anyhow::Result<()> {
+        // Assume we have a blank named first column just for holding the row name
+        self.columns
+            .update_column_info(Default::default(), row_name.len());
+
         let row = self.get_row(row_name);
         let col = row.add_column(column_name.clone(), time)?;
-        let width = col.width();
+
+        // Use either the width of the data or the name, whichever is larger
+        let width = max(col.width(), column_name.len());
         self.columns.update_column_info(column_name, width);
         Ok(())
     }
@@ -389,5 +394,196 @@ impl CriterionTableData {
             Entry::Occupied(entry) => entry.into_mut(),
             Entry::Vacant(entry) => entry.insert(Table::new(name)),
         }
+    }
+
+    pub fn make_tables(&self, mut f: impl Formatter) -> String {
+        // We have no idea how big this will be, but might as well not go tiny
+        let mut buffer = String::with_capacity(65535);
+
+        // Start of doc
+        let table_names: Vec<_> = self.tables.keys().collect();
+        f.start(&mut buffer, &table_names);
+
+        for table in self.tables.values() {
+            if let Some(first_col) = table.columns.0.get("") {
+                // Start of table
+                let col_info: Vec<_> = table.columns.0.values().collect();
+                f.start_table(&mut buffer, &table.name, &col_info);
+
+                for row in table.rows.values() {
+                    // Start of row
+                    f.start_row(&mut buffer, &row.name, first_col.max_width);
+
+                    for &col in &col_info[1..] {
+                        match row.column_data.get(&col.name) {
+                            // Used column
+                            Some(col_data) => f.used_column(
+                                &mut buffer,
+                                col_data.time_unit,
+                                col_data.pct,
+                                col.max_width,
+                            ),
+                            // Unused column
+                            None => f.unused_column(&mut buffer, col.max_width),
+                        }
+                    }
+
+                    // End of row
+                    f.end_row(&mut buffer);
+                }
+
+                // End of table
+                f.end_table(&mut buffer);
+            }
+        }
+
+        // End of doc
+        f.end(&mut buffer);
+
+        buffer
+    }
+}
+
+pub trait Formatter {
+    fn start(&mut self, buffer: &mut String, tables: &[&FlexStr]);
+
+    fn end(&mut self, buffer: &mut String);
+
+    fn start_table(&mut self, buffer: &mut String, name: &FlexStr, columns: &[&ColumnInfo]);
+
+    fn end_table(&mut self, buffer: &mut String);
+
+    fn start_row(&mut self, buffer: &mut String, name: &FlexStr, max_width: usize);
+
+    fn end_row(&mut self, buffer: &mut String);
+
+    fn used_column(&mut self, buffer: &mut String, time: TimeUnit, pct: Percent, max_width: usize);
+
+    fn unused_column(&mut self, buffer: &mut String, max_width: usize);
+}
+
+const CT_URL: &str = "https://github.com/nu11ptr/criterion_compare";
+
+// Width of making a single item bold
+const FIRST_COL_EXTRA_WIDTH: usize = "****".len();
+// Width of a single item in bold (italics is less) + one item in back ticks + one item in parens + one space
+const USED_EXTRA_WIDTH: usize = "+() ``****".len();
+
+pub struct GFMFormatter;
+
+impl GFMFormatter {
+    fn pad(buffer: &mut String, ch: char, max_width: usize, written: usize) {
+        // Pad the rest of the column (inclusive to handle trailing space)
+        let remaining = max_width - written;
+
+        for _ in 0..=remaining {
+            buffer.push(ch);
+        }
+    }
+}
+
+impl Formatter for GFMFormatter {
+    fn start(&mut self, buffer: &mut String, _tables: &[&FlexStr]) {
+        buffer.push_str("# Benchmarks\n\n");
+
+        // TODO: Add ToC?
+    }
+
+    fn end(&mut self, buffer: &mut String) {
+        buffer.push_str("Made with [criterion-table](");
+        buffer.push_str(CT_URL);
+        buffer.push_str(")\n");
+    }
+
+    fn start_table(&mut self, buffer: &mut String, name: &FlexStr, columns: &[&ColumnInfo]) {
+        // *** Title ***
+
+        buffer.push_str("## ");
+        buffer.push_str(name);
+        buffer.push_str("\n\n");
+
+        // *** Header Row ***
+
+        buffer.push_str("| ");
+        // Safety: Any slicing up to index 1 is always safe - guaranteed to have at least one column
+        let first_col_max_width = columns[0].max_width + FIRST_COL_EXTRA_WIDTH;
+        Self::pad(buffer, ' ', first_col_max_width, 0);
+
+        // Safety: Any slicing up to index 1 is always safe - guaranteed to have at least one column
+        for &column in &columns[1..] {
+            let max_width = column.max_width + USED_EXTRA_WIDTH;
+
+            buffer.push_str("| ");
+            buffer.push_str(&column.name);
+            Self::pad(buffer, ' ', max_width, column.name.len());
+        }
+
+        buffer.push_str(" |\n");
+
+        // *** Deliminator Row ***
+
+        // Right now, everything is left justified
+        buffer.push_str("|:");
+        Self::pad(buffer, '-', first_col_max_width, 0);
+
+        // Safety: Any slicing up to index 1 is always safe - guaranteed to have at least one column
+        for &column in &columns[1..] {
+            let max_width = column.max_width + USED_EXTRA_WIDTH;
+
+            buffer.push_str("|:");
+            Self::pad(buffer, '-', max_width, 0);
+        }
+
+        buffer.push_str(" |\n");
+    }
+
+    fn end_table(&mut self, buffer: &mut String) {
+        buffer.push('\n');
+    }
+
+    fn start_row(&mut self, buffer: &mut String, name: &FlexStr, max_width: usize) {
+        // Regular row name
+        let written = if !name.is_empty() {
+            buffer.push_str("| **");
+            buffer.push_str(name);
+            buffer.push_str("**");
+            name.len() + FIRST_COL_EXTRA_WIDTH
+        // Empty row name
+        } else {
+            buffer.push_str("| ");
+            0
+        };
+
+        Self::pad(buffer, ' ', max_width + FIRST_COL_EXTRA_WIDTH, written);
+    }
+
+    fn end_row(&mut self, buffer: &mut String) {
+        buffer.push_str(" |\n");
+    }
+
+    fn used_column(&mut self, buffer: &mut String, time: TimeUnit, pct: Percent, max_width: usize) {
+        // Positive = bold
+        let data = if pct.0 > 0.0 {
+            flex_fmt!("`{}` (**+{}**)", time.to_flex_str(), pct.to_flex_str())
+        // Negative = italics
+        } else if pct.0 < 0.0 {
+            flex_fmt!("`{}` (*{}*)", time.to_flex_str(), pct.to_flex_str())
+        // Even = no special formatting
+        } else {
+            flex_fmt!("`{}` ({})", time.to_flex_str(), pct.to_flex_str())
+        };
+
+        buffer.push_str("| ");
+        buffer.push_str(&data);
+
+        let max_width = max_width + USED_EXTRA_WIDTH;
+        Self::pad(buffer, ' ', max_width, data.len());
+    }
+
+    fn unused_column(&mut self, buffer: &mut String, max_width: usize) {
+        buffer.push_str("| ");
+        let data = "`N/A`";
+        buffer.push_str(data);
+        Self::pad(buffer, ' ', max_width + USED_EXTRA_WIDTH, data.len());
     }
 }
