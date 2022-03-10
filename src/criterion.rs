@@ -1,8 +1,8 @@
-use anyhow::anyhow;
 use std::cmp::max;
 use std::io::{BufReader, Read};
 use std::ops::Div;
 
+use anyhow::anyhow;
 use flexstr::{flex_fmt, FlexStr, ToFlex, ToFlexStr};
 use indexmap::map::Entry;
 use indexmap::IndexMap;
@@ -217,7 +217,7 @@ struct Column {
 impl Column {
     pub fn new(name: FlexStr, time_unit: TimeUnit, first_col_time: Option<TimeUnit>) -> Self {
         let pct = match first_col_time {
-            Some(first_col_time) => Percent(time_unit / first_col_time),
+            Some(first_col_time) => Percent(first_col_time / time_unit - 1.0),
             None => Default::default(),
         };
 
@@ -268,7 +268,10 @@ impl Row {
 
         match self.column_data.entry(name.clone()) {
             Entry::Occupied(_) => Err(anyhow!("Duplicate column: {name}")),
-            Entry::Vacant(entry) => Ok(entry.insert(Column::new(name, time_unit, first_time))),
+            Entry::Vacant(entry) => {
+                let col = Column::new(name, time_unit, first_time);
+                Ok(entry.insert(col))
+            }
         }
     }
 }
@@ -359,17 +362,20 @@ impl CriterionTableData {
             if let RawCriterionData::Benchmark(bm) = item {
                 // Break the id into table, column, and row respectively
                 let mut parts: Vec<FlexStr> = bm.id.split('/').map(|s| s.to_flex()).collect();
-                if parts.len() != 3 {
-                    eprintln!("Malformed id: {}", &bm.id);
-                    continue;
-                    //return Err(anyhow::anyhow!("Malformed id: {}", &bm.id));
+                if parts.len() < 2 {
+                    return Err(anyhow::anyhow!("Malformed id: {}", &bm.id));
                 }
 
-                // Assign names from vec and either find our table or create a new one, if needed
-                let (table_name, column_name, row_name) =
-                    (parts.remove(0), parts.remove(0), parts.remove(0));
+                let (table_name, column_name) = (parts.remove(0), parts.remove(0));
+                // If we don't have a row name then we will work with a blank row name
+                let row_name = if !parts.is_empty() {
+                    parts.remove(0)
+                } else {
+                    "".into()
+                };
+
+                // Find our table, calculate our timing, and add data to our column
                 let table = self.get_table(table_name);
-                //let col_idx = col_pos.next_idx(&table_name);
                 let time_unit = TimeUnit::try_new(bm.typical.estimate, &bm.typical.unit)?;
                 table.add_column_data(column_name, row_name, time_unit)?;
             }
