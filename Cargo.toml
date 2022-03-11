@@ -1,13 +1,13 @@
 [package]
 name = "criterion-table"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Scott Meeuwsen <smeeuwsen@gmail.com>"]
 license = "MIT OR Apache-2.0"
 description = "Generate markdown comparison tables from cargo-criterion benchmark output"
 repository = "https://github.com/nu11ptr/criterion-table"
 documentation = "https://docs.rs/criterion-table"
 keywords = ["benchmark", "criterion"]
-categories = ["profiling"]
+categories = ["development-tools::profiling"]
 readme = "README.md"
 edition = "2021"
 
