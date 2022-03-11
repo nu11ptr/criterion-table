@@ -3,6 +3,11 @@ name = "example"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[[bench]]
+name = "fibonacci"
+harness = false
 
 [dependencies]
+
+[dev-dependencies]
+criterion = "0.3"

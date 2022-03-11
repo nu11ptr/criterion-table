@@ -9,6 +9,10 @@ Generate markdown comparison tables from
 Currently, the tool is limited to Github Flavored Markdown (GFM), but adding 
 new output types is simple.
 
+## Generated Markdown Example
+
+[Benchmark Report](example/README.md)
+
 ## Installation
 
 ```bash
