@@ -3,7 +3,7 @@ use std::io::{BufReader, Read};
 use std::ops::Div;
 
 use anyhow::anyhow;
-use flexstr::{flex_fmt, FlexStr, ToFlex, ToFlexStr};
+use flexstr::{flex_fmt, FlexStr, IntoFlex, ToCase, ToFlex, ToFlexStr};
 use indexmap::map::Entry;
 use indexmap::IndexMap;
 use serde::Deserialize;
@@ -148,7 +148,7 @@ impl TimeUnit {
 
     #[inline]
     pub fn width(&self) -> usize {
-        self.to_flex_str().len()
+        self.to_flex_str().chars().count()
     }
 
     fn as_picoseconds(&self) -> f64 {
@@ -187,19 +187,24 @@ impl ToFlexStr for TimeUnit {
 // ### Percent ###
 
 #[derive(Clone, Copy, Debug, Default)]
-pub struct Percent(f64);
+pub struct Comparison(f64);
 
-impl Percent {
+impl Comparison {
     #[inline]
     pub fn width(self) -> usize {
-        self.to_flex_str().len()
+        self.to_flex_str().chars().count()
     }
 }
 
-impl ToFlexStr for Percent {
-    #[inline]
+impl ToFlexStr for Comparison {
     fn to_flex_str(&self) -> FlexStr {
-        flex_fmt!("{:.2}%", self.0 * 100.0)
+        if self.0 > 1.0 {
+            flex_fmt!("{:.2}x faster", self.0)
+        } else if self.0 < 1.0 {
+            flex_fmt!("{:.2}x slower", 1.0 / self.0)
+        } else {
+            flex_fmt!("{:.2}x", self.0)
+        }
     }
 }
 
@@ -210,14 +215,14 @@ struct Column {
     #[allow(dead_code)]
     name: FlexStr,
     time_unit: TimeUnit,
-    pct: Percent,
+    pct: Comparison,
 }
 
 impl Column {
     pub fn new(name: FlexStr, time_unit: TimeUnit, first_col_time: Option<TimeUnit>) -> Self {
         let pct = match first_col_time {
-            Some(first_col_time) => Percent(first_col_time / time_unit - 1.0),
-            None => Default::default(),
+            Some(first_col_time) => Comparison(first_col_time / time_unit),
+            None => Comparison(1.0),
         };
 
         Self {
@@ -323,13 +328,13 @@ impl Table {
     ) -> anyhow::Result<()> {
         // Assume we have a blank named first column just for holding the row name
         self.columns
-            .update_column_info(Default::default(), row_name.len());
+            .update_column_info(Default::default(), row_name.chars().count());
 
         let row = self.get_row(row_name);
         let col = row.add_column(column_name.clone(), time)?;
 
         // Use either the width of the data or the name, whichever is larger
-        let width = max(col.width(), column_name.len());
+        let width = max(col.width(), column_name.chars().count());
         self.columns.update_column_info(column_name, width);
         Ok(())
     }
@@ -457,17 +462,25 @@ pub trait Formatter {
 
     fn end_row(&mut self, buffer: &mut String);
 
-    fn used_column(&mut self, buffer: &mut String, time: TimeUnit, pct: Percent, max_width: usize);
+    fn used_column(
+        &mut self,
+        buffer: &mut String,
+        time: TimeUnit,
+        pct: Comparison,
+        max_width: usize,
+    );
 
     fn unused_column(&mut self, buffer: &mut String, max_width: usize);
 }
 
 const CT_URL: &str = "https://github.com/nu11ptr/criterion_compare";
 
+// *** NOTE: These are in _bytes_, not _chars_ - since ASCII right now this is ok ***
 // Width of making a single item bold
-const FIRST_COL_EXTRA_WIDTH: usize = "****".len();
+const FIRST_COL_EXTRA_WIDTH: usize = "**``**".len();
 // Width of a single item in bold (italics is less) + one item in back ticks + one item in parens + one space
-const USED_EXTRA_WIDTH: usize = "+() ``****".len();
+// NOTE: Added two more "X" because we added unicode check and x that won't be 1 byte each
+const USED_EXTRA_WIDTH: usize = "() ``****XX".len();
 
 pub struct GFMFormatter;
 
@@ -480,13 +493,26 @@ impl GFMFormatter {
             buffer.push(ch);
         }
     }
+
+    #[inline]
+    fn encode_link(s: &FlexStr) -> FlexStr {
+        s.replace(' ', "-").into_flex().to_lower()
+    }
 }
 
 impl Formatter for GFMFormatter {
-    fn start(&mut self, buffer: &mut String, _tables: &[&FlexStr]) {
+    fn start(&mut self, buffer: &mut String, tables: &[&FlexStr]) {
         buffer.push_str("# Benchmarks\n\n");
 
-        // TODO: Add ToC?
+        for &table in tables {
+            buffer.push_str("- [");
+            buffer.push_str(table);
+            buffer.push_str("](#");
+            buffer.push_str(&Self::encode_link(table));
+            buffer.push_str(")\n");
+        }
+
+        buffer.push('\n');
     }
 
     fn end(&mut self, buffer: &mut String) {
@@ -513,9 +539,10 @@ impl Formatter for GFMFormatter {
         for &column in &columns[1..] {
             let max_width = column.max_width + USED_EXTRA_WIDTH;
 
-            buffer.push_str("| ");
+            buffer.push_str("| `");
             buffer.push_str(&column.name);
-            Self::pad(buffer, ' ', max_width, column.name.len());
+            buffer.push('`');
+            Self::pad(buffer, ' ', max_width, column.name.chars().count() + 2);
         }
 
         buffer.push_str(" |\n");
@@ -544,10 +571,10 @@ impl Formatter for GFMFormatter {
     fn start_row(&mut self, buffer: &mut String, name: &FlexStr, max_width: usize) {
         // Regular row name
         let written = if !name.is_empty() {
-            buffer.push_str("| **");
+            buffer.push_str("| **`");
             buffer.push_str(name);
-            buffer.push_str("**");
-            name.len() + FIRST_COL_EXTRA_WIDTH
+            buffer.push_str("`**");
+            name.chars().count() + FIRST_COL_EXTRA_WIDTH
         // Empty row name
         } else {
             buffer.push_str("| ");
@@ -561,29 +588,43 @@ impl Formatter for GFMFormatter {
         buffer.push_str(" |\n");
     }
 
-    fn used_column(&mut self, buffer: &mut String, time: TimeUnit, pct: Percent, max_width: usize) {
+    fn used_column(
+        &mut self,
+        buffer: &mut String,
+        time: TimeUnit,
+        compare: Comparison,
+        max_width: usize,
+    ) {
+        let (time_str, speedup_str) = (time.to_flex_str(), compare.to_flex_str());
+
         // Positive = bold
-        let data = if pct.0 > 0.0 {
-            flex_fmt!("`{}` (**+{}**)", time.to_flex_str(), pct.to_flex_str())
+        let data = if speedup_str.contains("faster") {
+            flex_fmt!("`{time_str}` (✅ **{speedup_str}**)")
         // Negative = italics
-        } else if pct.0 < 0.0 {
-            flex_fmt!("`{}` (*{}*)", time.to_flex_str(), pct.to_flex_str())
+        } else if speedup_str.contains("slower") {
+            flex_fmt!("`{time_str}` (❌ *{speedup_str}*)")
         // Even = no special formatting
         } else {
-            flex_fmt!("`{}` ({})", time.to_flex_str(), pct.to_flex_str())
+            flex_fmt!("`{time_str}` ({speedup_str})")
         };
 
         buffer.push_str("| ");
         buffer.push_str(&data);
 
         let max_width = max_width + USED_EXTRA_WIDTH;
-        Self::pad(buffer, ' ', max_width, data.len());
+        Self::pad(buffer, ' ', max_width, data.chars().count());
     }
 
     fn unused_column(&mut self, buffer: &mut String, max_width: usize) {
         buffer.push_str("| ");
         let data = "`N/A`";
         buffer.push_str(data);
-        Self::pad(buffer, ' ', max_width + USED_EXTRA_WIDTH, data.len());
+
+        Self::pad(
+            buffer,
+            ' ',
+            max_width + USED_EXTRA_WIDTH,
+            data.chars().count(),
+        );
     }
 }
