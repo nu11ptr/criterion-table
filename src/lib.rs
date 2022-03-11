@@ -283,19 +283,13 @@ impl Row {
 // ### Column Info Map ###
 
 #[derive(Clone, Debug, Default)]
-struct ColumnInfoMap(IndexMap<FlexStr, ColumnInfo>);
+struct ColumnInfoVec(Vec<ColumnInfo>);
 
-impl ColumnInfoMap {
-    pub fn update_column_info(&mut self, name: FlexStr, width: usize) {
-        match self.0.entry(name.clone()) {
-            // If already exists, then just update with our width data
-            Entry::Occupied(entry) => {
-                entry.into_mut().update_info(width);
-            }
-            // If new column, we append to the end
-            Entry::Vacant(entry) => {
-                entry.insert(ColumnInfo::new(name, width));
-            }
+impl ColumnInfoVec {
+    pub fn update_column_info(&mut self, idx: usize, name: FlexStr, width: usize) {
+        match self.0.iter_mut().find(|col| col.name == name) {
+            Some(col_info) => col_info.update_info(width),
+            None => self.0.insert(idx, ColumnInfo::new(name, width)),
         }
     }
 }
@@ -306,7 +300,7 @@ impl ColumnInfoMap {
 struct Table {
     #[allow(dead_code)]
     name: FlexStr,
-    columns: ColumnInfoMap,
+    columns: ColumnInfoVec,
     rows: IndexMap<FlexStr, Row>,
 }
 
@@ -322,20 +316,21 @@ impl Table {
 
     pub fn add_column_data(
         &mut self,
+        idx: usize,
         column_name: FlexStr,
         row_name: FlexStr,
         time: TimeUnit,
     ) -> anyhow::Result<()> {
         // Assume we have a blank named first column just for holding the row name
         self.columns
-            .update_column_info(Default::default(), row_name.chars().count());
+            .update_column_info(0, Default::default(), row_name.chars().count());
 
         let row = self.get_row(row_name);
         let col = row.add_column(column_name.clone(), time)?;
 
         // Use either the width of the data or the name, whichever is larger
         let width = max(col.width(), column_name.chars().count());
-        self.columns.update_column_info(column_name, width);
+        self.columns.update_column_info(idx, column_name, width);
         Ok(())
     }
 
@@ -343,6 +338,23 @@ impl Table {
         match self.rows.entry(name.clone()) {
             Entry::Occupied(entry) => entry.into_mut(),
             Entry::Vacant(entry) => entry.insert(Row::new(name)),
+        }
+    }
+}
+
+// ### Column Position ###
+
+#[derive(Default)]
+struct ColumnPosition(IndexMap<FlexStr, usize>);
+
+impl ColumnPosition {
+    pub fn next_idx(&mut self, row_name: FlexStr) -> usize {
+        match self.0.entry(row_name) {
+            Entry::Occupied(mut entry) => {
+                *entry.get_mut() += 1;
+                *entry.get()
+            }
+            Entry::Vacant(entry) => *entry.insert(1),
         }
     }
 }
@@ -367,6 +379,8 @@ impl CriterionTableData {
     }
 
     fn build_from_raw_data(&mut self, raw_data: &[RawCriterionData]) -> anyhow::Result<()> {
+        let mut col_pos = ColumnPosition::default();
+
         for item in raw_data {
             // We only process benchmark data - skip anything else
             if let RawCriterionData::Benchmark(bm) = item {
@@ -387,7 +401,9 @@ impl CriterionTableData {
                 // Find our table, calculate our timing, and add data to our column
                 let table = self.get_table(table_name);
                 let time_unit = TimeUnit::try_new(bm.typical.estimate, &bm.typical.unit)?;
-                table.add_column_data(column_name, row_name, time_unit)?;
+
+                let idx = col_pos.next_idx(row_name.clone());
+                table.add_column_data(idx, column_name, row_name, time_unit)?;
             }
         }
 
@@ -410,16 +426,17 @@ impl CriterionTableData {
         f.start(&mut buffer, &table_names);
 
         for table in self.tables.values() {
-            if let Some(first_col) = table.columns.0.get("") {
+            let col_info = &table.columns.0;
+
+            if let Some(first_col) = col_info.first() {
                 // Start of table
-                let col_info: Vec<_> = table.columns.0.values().collect();
-                f.start_table(&mut buffer, &table.name, &col_info);
+                f.start_table(&mut buffer, &table.name, col_info);
 
                 for row in table.rows.values() {
                     // Start of row
                     f.start_row(&mut buffer, &row.name, first_col.max_width);
 
-                    for &col in &col_info[1..] {
+                    for col in &col_info[1..] {
                         match row.column_data.get(&col.name) {
                             // Used column
                             Some(col_data) => f.used_column(
@@ -454,7 +471,7 @@ pub trait Formatter {
 
     fn end(&mut self, buffer: &mut String);
 
-    fn start_table(&mut self, buffer: &mut String, name: &FlexStr, columns: &[&ColumnInfo]);
+    fn start_table(&mut self, buffer: &mut String, name: &FlexStr, columns: &[ColumnInfo]);
 
     fn end_table(&mut self, buffer: &mut String);
 
@@ -521,7 +538,7 @@ impl Formatter for GFMFormatter {
         buffer.push_str(")\n");
     }
 
-    fn start_table(&mut self, buffer: &mut String, name: &FlexStr, columns: &[&ColumnInfo]) {
+    fn start_table(&mut self, buffer: &mut String, name: &FlexStr, columns: &[ColumnInfo]) {
         // *** Title ***
 
         buffer.push_str("## ");
@@ -536,7 +553,7 @@ impl Formatter for GFMFormatter {
         Self::pad(buffer, ' ', first_col_max_width, 0);
 
         // Safety: Any slicing up to index 1 is always safe - guaranteed to have at least one column
-        for &column in &columns[1..] {
+        for column in &columns[1..] {
             let max_width = column.max_width + USED_EXTRA_WIDTH;
 
             buffer.push_str("| `");
@@ -554,7 +571,7 @@ impl Formatter for GFMFormatter {
         Self::pad(buffer, '-', first_col_max_width, 0);
 
         // Safety: Any slicing up to index 1 is always safe - guaranteed to have at least one column
-        for &column in &columns[1..] {
+        for column in &columns[1..] {
             let max_width = column.max_width + USED_EXTRA_WIDTH;
 
             buffer.push_str("|:");
