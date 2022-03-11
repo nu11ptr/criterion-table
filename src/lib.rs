@@ -263,7 +263,6 @@ impl Column {
 
 #[derive(Clone, Debug)]
 struct Row {
-    #[allow(dead_code)]
     name: FlexStr,
     column_data: IndexMap<FlexStr, Column>,
 }
@@ -316,7 +315,6 @@ impl ColumnInfoVec {
 
 #[derive(Clone, Debug)]
 struct Table {
-    #[allow(dead_code)]
     name: FlexStr,
     columns: ColumnInfoVec,
     rows: IndexMap<FlexStr, Row>,

@@ -6,7 +6,7 @@ license = "MIT OR Apache-2.0"
 description = "Generate markdown comparison tables from cargo-criterion benchmark output"
 repository = "https://github.com/nu11ptr/criterion-table"
 documentation = "https://docs.rs/criterion-table"
-keywords = ["benchmark", "criterion"]
+keywords = ["benchmark", "criterion", "markdown"]
 categories = ["development-tools::profiling"]
 readme = "README.md"
 edition = "2021"
@@ -20,4 +20,3 @@ serde_json = "1"
 
 [dev-dependencies]
 criterion = "0.3"
-flexstr = "0.7"

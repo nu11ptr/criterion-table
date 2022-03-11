@@ -1,4 +1,4 @@
-# criterion_compare
+# criterion-table
 
 [![Crate](https://img.shields.io/crates/v/criterion-table?style=for-the-badge)](https://crates.io/crates/criterion-table)
 [![Docs](https://img.shields.io/docsrs/criterion-table?style=for-the-badge)](https://docs.rs/criterion-table)
