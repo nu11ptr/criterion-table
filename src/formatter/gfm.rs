@@ -1,7 +1,7 @@
 use crate::{ColumnInfo, Comparison, Formatter, TimeUnit};
 use flexstr::{flex_fmt, FlexStr, IntoFlex, ToCase, ToFlexStr};
 
-const CT_URL: &str = "https://github.com/nu11ptr/criterion_compare";
+const CT_URL: &str = "https://github.com/nu11ptr/criterion-table";
 
 // *** NOTE: These are in _bytes_, not _chars_ - since ASCII right now this is ok ***
 // Width of making a single item bold

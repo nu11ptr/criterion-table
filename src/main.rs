@@ -1,8 +1,8 @@
 use std::io;
 use std::io::Read;
 
-use criterion_compare::formatter::GFMFormatter;
-use criterion_compare::{CriterionTableData, RawCriterionData};
+use criterion_table::formatter::GFMFormatter;
+use criterion_table::{CriterionTableData, RawCriterionData};
 
 fn main() {
     match process(io::stdin()) {
