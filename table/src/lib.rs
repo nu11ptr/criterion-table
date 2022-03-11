@@ -20,7 +20,7 @@ mod test_readme {
         };
     }
 
-    external_doc_test!(include_str!("../README.md"));
+    external_doc_test!(include_str!("../../README.md"));
 }
 
 // Starting capacity for the String buffer used to build the page
