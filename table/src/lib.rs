@@ -1,3 +1,5 @@
+#![warn(missing_docs)]
+
 //! Generate markdown comparison tables from
 //! [Cargo Criterion](https://github.com/bheisler/cargo-criterion) benchmark output.
 //!
@@ -6,7 +8,7 @@
 //!
 //! ## Generated Markdown Example
 //!
-//! [Benchmark Report](example/README.md)
+//! [Benchmark Report](https://github.com/nu11ptr/criterion-table/blob/master/example/README.md)
 
 /// This module holds the various formatters that can be used to format the output
 pub mod formatter;
@@ -77,7 +79,7 @@ struct ChangeDetails {
     change: ChangeType,
 }
 
-/// Raw Criterion benchmark data
+/// Raw deserialized JSON Criterion benchmark data
 #[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct BenchmarkComplete {
@@ -98,7 +100,7 @@ pub struct BenchmarkComplete {
     change: Option<ChangeDetails>,
 }
 
-/// Raw Criterion benchmark group data
+/// Raw deserialized JSON Criterion benchmark group data
 #[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct BenchmarkGroupComplete {
@@ -107,7 +109,7 @@ pub struct BenchmarkGroupComplete {
     report_directory: FlexStr,
 }
 
-/// Enum that can hold either raw benchmark or benchmark group data
+/// Enum that can hold either Raw deserialized JSON benchmark or benchmark group data
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 pub enum RawCriterionData {
@@ -118,7 +120,8 @@ pub enum RawCriterionData {
 }
 
 impl RawCriterionData {
-    /// Load raw Criterion JSON data from the reader
+    /// Load raw Criterion JSON data from the given reader. It returns a `Vec` of enum wrapped raw
+    /// benchmark or group data
     pub fn from_reader(r: impl Read) -> serde_json::error::Result<Vec<Self>> {
         let reader = BufReader::new(r);
         let mut de = serde_json::Deserializer::from_reader(reader);
@@ -139,9 +142,11 @@ impl RawCriterionData {
 // *** Tables Config ***
 
 #[derive(Default, Deserialize)]
-/// Configuration file format loaded by Serde
+/// Configuration file format for adding comments to tables
 pub struct TablesConfig {
+    /// Top level comments
     pub comments: Option<FlexStr>,
+    /// Per table comments (table -> comment)
     pub table_comments: HashMap<FlexStr, FlexStr>,
 }
 
@@ -157,18 +162,22 @@ impl TablesConfig {
     }
 }
 
-// *** Criterion Data ***
+// *** Criterion Data Structures ***
 
 // ### Column Info ###
 
+/// Column maximum width data
 #[derive(Clone, Debug)]
 pub struct ColumnInfo {
+    /// The name of the column
     pub name: FlexStr,
+    /// The maximum display width for this column
     pub max_width: usize,
 }
 
 impl ColumnInfo {
     #[inline]
+    /// Create a new `ColumnInfo` using an initial width
     pub fn new(name: FlexStr, width: usize) -> Self {
         Self {
             name,
@@ -184,16 +193,23 @@ impl ColumnInfo {
 
 // ### Time Unit ###
 
+/// Time unit of a particular measurement
 #[derive(Clone, Copy, Debug)]
 pub enum TimeUnit {
+    /// Time is in seconds
     Second(f64),
+    /// Time is in milliseconds
     Millisecond(f64),
+    /// Time is in microseconds
     Microsecond(f64),
+    /// Time is in nanoseconds
     Nanosecond(f64),
+    /// Time is in picoseconds
     Picosecond(f64),
 }
 
 impl TimeUnit {
+    /// Create a new `TimeUnit` taking the time and initial unit string as input
     pub fn try_new(time: f64, unit: &str) -> anyhow::Result<Self> {
         match unit {
             "ms" if time > 1000.0 => Self::try_new(time / 1000.0, "s"),
@@ -209,6 +225,7 @@ impl TimeUnit {
         }
     }
 
+    /// Returns the display width in chars for this `TimeUnit`
     #[inline]
     pub fn width(&self) -> usize {
         self.to_flex_str().chars().count()
@@ -249,10 +266,12 @@ impl ToFlexStr for TimeUnit {
 
 // ### Percent ###
 
+/// A comparison time of a benchmark to its baseline
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Comparison(f64);
 
 impl Comparison {
+    /// The display width in chars of this comparison data
     #[inline]
     pub fn width(self) -> usize {
         self.to_flex_str().chars().count()
@@ -482,6 +501,7 @@ impl CriterionTableData {
         s.replace(' ', "_").into_flex().to_lower()
     }
 
+    /// Given a `Formatter` and `TablesConfig`, generate formatted tables as a `String`
     pub fn make_tables(&self, mut f: impl Formatter, config: &TablesConfig) -> String {
         let mut buffer = String::with_capacity(BUFFER_CAPACITY);
 
@@ -533,11 +553,17 @@ impl CriterionTableData {
 
 // *** Formatter ***
 
+/// Implement this "visitor" trait to create a `Formatter` for a new file type
 pub trait Formatter {
+    /// Called first at the start of output. Has top level `comment`, if any, and a slice of table
+    /// names (typically used to build a table of contents)
     fn start(&mut self, buffer: &mut String, comment: Option<&FlexStr>, tables: &[&FlexStr]);
 
+    /// Called last after all processing is done
     fn end(&mut self, buffer: &mut String);
 
+    /// Called before each table is output with the `name` of the table, a table `comment`, if any,
+    /// and column maximum display width data
     fn start_table(
         &mut self,
         buffer: &mut String,
@@ -546,20 +572,27 @@ pub trait Formatter {
         columns: &[ColumnInfo],
     );
 
+    /// Called at the end of each table output
     fn end_table(&mut self, buffer: &mut String);
 
+    /// Called at the start of each new row with the row `name` and the `max_width` of the row name
+    /// column
     fn start_row(&mut self, buffer: &mut String, name: &FlexStr, max_width: usize);
 
+    /// Called at the end of each row
     fn end_row(&mut self, buffer: &mut String);
 
+    /// Called for each column that is populated with the `time` measurement, a comparison to baseline,
+    /// and the maximum display width of the column
     fn used_column(
         &mut self,
         buffer: &mut String,
         time: TimeUnit,
-        pct: Comparison,
+        compare: Comparison,
         max_width: usize,
     );
 
+    /// Called for each column that is blank with the maximum display width of the the column
     fn unused_column(&mut self, buffer: &mut String, max_width: usize);
 }
 
@@ -576,6 +609,9 @@ fn load_config(cfg_name: impl AsRef<Path>) -> anyhow::Result<TablesConfig> {
     }
 }
 
+/// Top level function that can be used to build table data. It takes a reader (raw `cargo-criterion`
+/// JSON data), a `Formatter` (only option is `GFMFormatter` as of this writing), and the name of
+/// a file in `TablesConfig` toml format (the file is optional, simply skipped if it can't be found)
 pub fn build_tables(
     read: impl Read,
     fmt: impl Formatter,

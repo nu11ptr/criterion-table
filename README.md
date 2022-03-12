@@ -4,10 +4,11 @@
 [![Docs](https://img.shields.io/docsrs/criterion-table?style=for-the-badge)](https://docs.rs/criterion-table)
 
 Generate markdown comparison tables from 
-[Cargo Criterion](https://github.com/bheisler/cargo-criterion) benchmark output. 
+[Cargo Criterion](https://github.com/bheisler/cargo-criterion) benchmark JSON 
+output. 
 
 Currently, the tool is limited to Github Flavored Markdown (GFM), but adding 
-new output types is simple.
+new output types is relatively simple.
 
 ## Generated Markdown Example
 
@@ -34,7 +35,7 @@ cargo install criterion-table
     * Row name is the only optional field, and if left blank, all results 
       will be a single blank row
     * If using a very basic `benchmark_function` you would only get a column 
-      name, which isn't valid
+      name by default, which isn't sufficient
     * If using benchmark groups you will get two sections automatically
     * If using benchmark groups and `BenchmarkId` you will get all three 
       sections automatically
@@ -101,7 +102,7 @@ criterion_main!(benches);
 
 2. Create a `tables.toml` configuration file (*Optional*)
 
-This allows you to add commentary integrate with the tables of the markdown. 
+This allows you to add commentary to integrate with the tables in the markdown. 
 Table names are in lowercase and spaces replaced with dashes. The file must 
 be in the local directory. Here is an example:
 
@@ -155,47 +156,11 @@ type via the `Formatter` trait by creating your own new binary project
 criterion-table = "0.2"
 ```
 
-2. Create a new type and implement `criterion_table::Formatter`
+2. Create a new type and implement 
+[Formatter](https://docs.rs/criterion-table/latest/criterion_table/trait.Formatter.html)
 
-```rust
-use criterion_table::{ColumnInfo, Comparison, TimeUnit};
-use flexstr::FlexStr;
-
-pub trait Formatter {
-    fn start(&mut self, buffer: &mut String, comment: Option<&FlexStr>, tables: &[&FlexStr]);
-
-    fn end(&mut self, buffer: &mut String);
-
-    fn start_table(
-        &mut self,
-        buffer: &mut String,
-        name: &FlexStr,
-        comment: Option<&FlexStr>,
-        columns: &[ColumnInfo],
-    );
-
-    fn end_table(&mut self, buffer: &mut String);
-
-    fn start_row(&mut self, buffer: &mut String, name: &FlexStr, max_width: usize);
-
-    fn end_row(&mut self, buffer: &mut String);
-
-    fn used_column(
-        &mut self,
-        buffer: &mut String,
-        time: TimeUnit,
-        pct: Comparison,
-        max_width: usize,
-    );
-
-    fn unused_column(&mut self, buffer: &mut String, max_width: usize);
-}
-```
-
-3. Create a `main` function and call `build_tables`. It takes parameters 
-   that implement the `Read` trait (this is the raw JSON data), `Formatter` 
-   trait (your formatter), and the name of the config file (`tables.toml` or 
-   whatever you prefer) and outputs your data per your format as a `String`.
+3. Create a `main` function and call 
+[build_tables](https://docs.rs/criterion-table/latest/criterion_table/fn.build_tables.html)
 
 NOTE: Replace `GFMFormatter` with your new formatter below 
 
@@ -221,7 +186,8 @@ fn main() {
 }
 ```
 
-4. Save the returned `String` to the file type of your formatter
+4. Save the returned `String` to the file type of your formatter or write to 
+   stdout
 
 ## License
 
