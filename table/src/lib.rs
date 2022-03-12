@@ -1,10 +1,11 @@
 #![warn(missing_docs)]
 
 //! Generate markdown comparison tables from
-//! [Cargo Criterion](https://github.com/bheisler/cargo-criterion) benchmark output.
+//! [Cargo Criterion](https://github.com/bheisler/cargo-criterion) benchmark JSON
+//! output.
 //!
 //! Currently, the tool is limited to Github Flavored Markdown (GFM), but adding
-//! new output types is simple.
+//! new output types is relatively simple.
 //!
 //! ## Generated Markdown Example
 //!
@@ -424,12 +425,12 @@ impl Table {
 
 // ### Column Position ###
 
-#[derive(Default)]
-struct ColumnPosition(IndexMap<FlexStr, usize>);
+#[derive(Default, Debug)]
+struct ColumnPosition(IndexMap<(FlexStr, FlexStr), usize>);
 
 impl ColumnPosition {
-    pub fn next_idx(&mut self, row_name: FlexStr) -> usize {
-        match self.0.entry(row_name) {
+    pub fn next_idx(&mut self, table_name: FlexStr, row_name: FlexStr) -> usize {
+        match self.0.entry((table_name, row_name)) {
             Entry::Occupied(mut entry) => {
                 *entry.get_mut() += 1;
                 *entry.get()
@@ -479,10 +480,10 @@ impl CriterionTableData {
                 };
 
                 // Find our table, calculate our timing, and add data to our column
-                let table = self.get_table(table_name);
+                let table = self.get_table(table_name.clone());
                 let time_unit = TimeUnit::try_new(bm.typical.estimate, &bm.typical.unit)?;
 
-                let idx = col_pos.next_idx(row_name.clone());
+                let idx = col_pos.next_idx(table_name, row_name.clone());
                 table.add_column_data(idx, column_name, row_name, time_unit)?;
             }
         }
