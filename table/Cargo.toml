@@ -8,7 +8,7 @@ repository = "https://github.com/nu11ptr/criterion-table"
 documentation = "https://docs.rs/criterion-table"
 keywords = ["benchmark", "criterion", "markdown"]
 categories = ["development-tools::profiling"]
-readme = "README.md"
+readme = "../README.md"
 edition = "2021"
 
 [dependencies]
