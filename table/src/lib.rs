@@ -1,11 +1,25 @@
+//! Generate markdown comparison tables from
+//! [Cargo Criterion](https://github.com/bheisler/cargo-criterion) benchmark output.
+//!
+//! Currently, the tool is limited to Github Flavored Markdown (GFM), but adding
+//! new output types is simple.
+//!
+//! ## Generated Markdown Example
+//!
+//! [Benchmark Report](example/README.md)
+
+/// This module holds the various formatters that can be used to format the output
 pub mod formatter;
 
 use std::cmp::max;
-use std::io::{BufReader, Read};
+use std::collections::HashMap;
+use std::fs::File;
+use std::io::{BufReader, ErrorKind, Read};
 use std::ops::Div;
+use std::path::Path;
 
 use anyhow::anyhow;
-use flexstr::{flex_fmt, FlexStr, ToFlex, ToFlexStr};
+use flexstr::{flex_fmt, FlexStr, IntoFlex, ToCase, ToFlex, ToFlexStr};
 use indexmap::map::Entry;
 use indexmap::IndexMap;
 use serde::Deserialize;
@@ -63,6 +77,7 @@ struct ChangeDetails {
     change: ChangeType,
 }
 
+/// Raw Criterion benchmark data
 #[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct BenchmarkComplete {
@@ -83,6 +98,7 @@ pub struct BenchmarkComplete {
     change: Option<ChangeDetails>,
 }
 
+/// Raw Criterion benchmark group data
 #[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct BenchmarkGroupComplete {
@@ -91,14 +107,18 @@ pub struct BenchmarkGroupComplete {
     report_directory: FlexStr,
 }
 
+/// Enum that can hold either raw benchmark or benchmark group data
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 pub enum RawCriterionData {
+    /// Raw benchmark data
     Benchmark(Box<BenchmarkComplete>),
+    /// Raw benchmark group data
     BenchmarkGroup(Box<BenchmarkGroupComplete>),
 }
 
 impl RawCriterionData {
+    /// Load raw Criterion JSON data from the reader
     pub fn from_reader(r: impl Read) -> serde_json::error::Result<Vec<Self>> {
         let reader = BufReader::new(r);
         let mut de = serde_json::Deserializer::from_reader(reader);
@@ -113,6 +133,27 @@ impl RawCriterionData {
         }
 
         Ok(data_vec)
+    }
+}
+
+// *** Tables Config ***
+
+#[derive(Default, Deserialize)]
+/// Configuration file format loaded by Serde
+pub struct TablesConfig {
+    pub comments: Option<FlexStr>,
+    pub table_comments: HashMap<FlexStr, FlexStr>,
+}
+
+impl TablesConfig {
+    /// Try to load the config from the given reader
+    pub fn try_load_config(r: impl Read) -> anyhow::Result<Self> {
+        let mut reader = BufReader::new(r);
+        let mut buffer = String::with_capacity(16384);
+        reader.read_to_string(&mut buffer)?;
+
+        let config: TablesConfig = toml::from_str(&buffer)?;
+        Ok(config)
     }
 }
 
@@ -155,6 +196,10 @@ pub enum TimeUnit {
 impl TimeUnit {
     pub fn try_new(time: f64, unit: &str) -> anyhow::Result<Self> {
         match unit {
+            "ms" if time > 1000.0 => Self::try_new(time / 1000.0, "s"),
+            "us" if time > 1000.0 => Self::try_new(time / 1000.0, "ms"),
+            "ns" if time > 1000.0 => Self::try_new(time / 1000.0, "us"),
+            "ps" if time > 1000.0 => Self::try_new(time / 1000.0, "ns"),
             "s" => Ok(TimeUnit::Second(time)),
             "ms" => Ok(TimeUnit::Millisecond(time)),
             "us" => Ok(TimeUnit::Microsecond(time)),
@@ -433,19 +478,24 @@ impl CriterionTableData {
         }
     }
 
-    pub fn make_tables(&self, mut f: impl Formatter) -> String {
+    fn encode_key(s: &FlexStr) -> FlexStr {
+        s.replace(' ', "_").into_flex().to_lower()
+    }
+
+    pub fn make_tables(&self, mut f: impl Formatter, config: &TablesConfig) -> String {
         let mut buffer = String::with_capacity(BUFFER_CAPACITY);
 
         // Start of doc
         let table_names: Vec<_> = self.tables.keys().collect();
-        f.start(&mut buffer, &table_names);
+        f.start(&mut buffer, config.comments.as_ref(), &table_names);
 
         for table in self.tables.values() {
             let col_info = &table.columns.0;
 
             if let Some(first_col) = col_info.first() {
                 // Start of table
-                f.start_table(&mut buffer, &table.name, col_info);
+                let comments = config.table_comments.get(&Self::encode_key(&table.name));
+                f.start_table(&mut buffer, &table.name, comments, col_info);
 
                 for row in table.rows.values() {
                     // Start of row
@@ -484,11 +534,17 @@ impl CriterionTableData {
 // *** Formatter ***
 
 pub trait Formatter {
-    fn start(&mut self, buffer: &mut String, tables: &[&FlexStr]);
+    fn start(&mut self, buffer: &mut String, comment: Option<&FlexStr>, tables: &[&FlexStr]);
 
     fn end(&mut self, buffer: &mut String);
 
-    fn start_table(&mut self, buffer: &mut String, name: &FlexStr, columns: &[ColumnInfo]);
+    fn start_table(
+        &mut self,
+        buffer: &mut String,
+        name: &FlexStr,
+        comment: Option<&FlexStr>,
+        columns: &[ColumnInfo],
+    );
 
     fn end_table(&mut self, buffer: &mut String);
 
@@ -505,4 +561,28 @@ pub trait Formatter {
     );
 
     fn unused_column(&mut self, buffer: &mut String, max_width: usize);
+}
+
+// *** Functions ***
+
+fn load_config(cfg_name: impl AsRef<Path>) -> anyhow::Result<TablesConfig> {
+    match File::open(cfg_name) {
+        // If the file exists, but it can't be deserialized then report that error
+        Ok(f) => Ok(TablesConfig::try_load_config(f)?),
+        // If file just isn't there then ignore and return a blank config
+        Err(err) if err.kind() == ErrorKind::NotFound => Ok(TablesConfig::default()),
+        // Report any other I/O errors
+        Err(err) => Err(err.into()),
+    }
+}
+
+pub fn build_tables(
+    read: impl Read,
+    fmt: impl Formatter,
+    cfg_name: impl AsRef<Path>,
+) -> anyhow::Result<String> {
+    let raw_data = RawCriterionData::from_reader(read)?;
+    let data = CriterionTableData::from_raw(&raw_data)?;
+    let config = load_config(cfg_name)?;
+    Ok(data.make_tables(fmt, &config))
 }

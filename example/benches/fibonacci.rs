@@ -31,7 +31,7 @@ pub fn fib_iter(n: u64) -> u64 {
 pub fn criterion_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("Fibonacci");
 
-    for row in vec![10, 20] {
+    for row in vec![10, 20, 30] {
         let id = BenchmarkId::new("Recursive Fib", row);
         group.bench_with_input(id, &row, |b, row| b.iter(|| fib_recur(black_box(*row))));
 

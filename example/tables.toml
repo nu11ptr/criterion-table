@@ -1,0 +1,9 @@
+comments = """
+This benchmark comparison report shows the difference in performance between iterative (`fib_iter`) and recursive
+(`fib_recur`) fibonacci functions.
+"""
+
+[table_comments]
+fibonacci = """
+Since `fib_recur` is not tail recursive, Rust is forced to make a function call making the recursive version MUCH slower.
+"""

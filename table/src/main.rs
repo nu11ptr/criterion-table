@@ -1,11 +1,12 @@
 use std::io;
-use std::io::Read;
 
+use criterion_table::build_tables;
 use criterion_table::formatter::GFMFormatter;
-use criterion_table::{CriterionTableData, RawCriterionData};
+
+const TABLES_CONFIG: &str = "tables.toml";
 
 fn main() {
-    match process(io::stdin()) {
+    match build_tables(io::stdin(), GFMFormatter, TABLES_CONFIG) {
         Ok(data) => {
             println!("{data}");
         }
@@ -13,10 +14,4 @@ fn main() {
             eprintln!("An error occurred processing Criterion data: {err}");
         }
     }
-}
-
-fn process(r: impl Read) -> anyhow::Result<String> {
-    let raw_data = RawCriterionData::from_reader(r)?;
-    let data = CriterionTableData::from_raw(&raw_data)?;
-    Ok(data.make_tables(GFMFormatter))
 }

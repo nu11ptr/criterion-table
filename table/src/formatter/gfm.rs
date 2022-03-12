@@ -12,6 +12,7 @@ const USED_EXTRA_WIDTH: usize = "() ``****XX".len();
 
 // *** GFM Formatter ***
 
+/// This formatter outputs Github Flavored Markdown
 pub struct GFMFormatter;
 
 impl GFMFormatter {
@@ -31,8 +32,13 @@ impl GFMFormatter {
 }
 
 impl Formatter for GFMFormatter {
-    fn start(&mut self, buffer: &mut String, tables: &[&FlexStr]) {
+    fn start(&mut self, buffer: &mut String, comment: Option<&FlexStr>, tables: &[&FlexStr]) {
         buffer.push_str("# Benchmarks\n\n");
+
+        if let Some(comments) = comment {
+            buffer.push_str(comments);
+            buffer.push('\n');
+        }
 
         for &table in tables {
             buffer.push_str("- [");
@@ -51,12 +57,23 @@ impl Formatter for GFMFormatter {
         buffer.push_str(")\n");
     }
 
-    fn start_table(&mut self, buffer: &mut String, name: &FlexStr, columns: &[ColumnInfo]) {
+    fn start_table(
+        &mut self,
+        buffer: &mut String,
+        name: &FlexStr,
+        comment: Option<&FlexStr>,
+        columns: &[ColumnInfo],
+    ) {
         // *** Title ***
 
         buffer.push_str("## ");
         buffer.push_str(name);
         buffer.push_str("\n\n");
+
+        if let Some(comments) = comment {
+            buffer.push_str(comments);
+            buffer.push('\n');
+        }
 
         // *** Header Row ***
 

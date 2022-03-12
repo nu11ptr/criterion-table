@@ -99,7 +99,25 @@ criterion_group!(benches, criterion_benchmark);
 criterion_main!(benches);
 ```
 
-2. Run Benchmarks and Generate Markdown
+2. Create a `tables.toml` configuration file (*Optional*)
+
+This allows you to add commentary integrate with the tables of the markdown. 
+Table names are in lowercase and spaces replaced with dashes. The file must 
+be in the local directory. Here is an example:
+
+```toml
+comments = """
+This is a benchmark comparison report.
+"""
+
+[table_comments]
+fibonacci = """
+Since `fibonacci` is not tail recursive or iterative, all these function calls 
+are not inlined which makes this version very slow.
+"""
+```
+
+3. Run Benchmarks and Generate Markdown
 
 This can be done in a couple of different ways:
 
@@ -134,7 +152,7 @@ type via the `Formatter` trait by creating your own new binary project
 
 ```toml
 [dependencies]
-criterion-table = "0.1"
+criterion-table = "0.2"
 ```
 
 2. Create a new type and implement `criterion_table::Formatter`
@@ -144,11 +162,17 @@ use criterion_table::{ColumnInfo, Comparison, TimeUnit};
 use flexstr::FlexStr;
 
 pub trait Formatter {
-    fn start(&mut self, buffer: &mut String, tables: &[&FlexStr]);
+    fn start(&mut self, buffer: &mut String, comment: Option<&FlexStr>, tables: &[&FlexStr]);
 
     fn end(&mut self, buffer: &mut String);
 
-    fn start_table(&mut self, buffer: &mut String, name: &FlexStr, columns: &[ColumnInfo]);
+    fn start_table(
+        &mut self,
+        buffer: &mut String,
+        name: &FlexStr,
+        comment: Option<&FlexStr>,
+        columns: &[ColumnInfo],
+    );
 
     fn end_table(&mut self, buffer: &mut String);
 
@@ -156,31 +180,44 @@ pub trait Formatter {
 
     fn end_row(&mut self, buffer: &mut String);
 
-    fn used_column(&mut self, buffer: &mut String, time: TimeUnit, pct: Comparison, max_width: usize);
+    fn used_column(
+        &mut self,
+        buffer: &mut String,
+        time: TimeUnit,
+        pct: Comparison,
+        max_width: usize,
+    );
 
     fn unused_column(&mut self, buffer: &mut String, max_width: usize);
 }
 ```
 
-3. Create a `process` function that takes `cargo-criterion` raw JSON as 
-   input and outputs your format as a `String`:
+3. Create a `main` function and call `build_tables`. It takes parameters 
+   that implement the `Read` trait (this is the raw JSON data), `Formatter` 
+   trait (your formatter), and the name of the config file (`tables.toml` or 
+   whatever you prefer) and outputs your data per your format as a `String`.
 
 NOTE: Replace `GFMFormatter` with your new formatter below 
 
 ```rust
-use std::error::Error;
-use std::io::Read;
+use std::io;
 
-// This would be replaced with your formatter
+use criterion_table::build_tables;
+// Replace with your formatter
 use criterion_table::formatter::GFMFormatter;
-use criterion_table::{CriterionTableData, RawCriterionData};
 
-fn process(r: impl Read) -> Result<String, Box<dyn Error>> {
-    let raw_data = RawCriterionData::from_reader(r)?;
-    let data = CriterionTableData::from_raw(&raw_data)?;
-    
-    // Pass your formatter to `make_tables` below
-    Ok(data.make_tables(GFMFormatter))
+const TABLES_CONFIG: &str = "tables.toml";
+
+fn main() {
+    // Replace `GFMFormatter` with your formatter
+    match build_tables(io::stdin(), GFMFormatter, TABLES_CONFIG) {
+        Ok(data) => {
+            println!("{data}");
+        }
+        Err(err) => {
+            eprintln!("An error occurred processing Criterion data: {err}");
+        }
+    }
 }
 ```
 
