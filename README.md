@@ -153,7 +153,7 @@ type via the `Formatter` trait by creating your own new binary project
 
 ```toml
 [dependencies]
-criterion-table = "0.2"
+criterion-table = "0.3"
 ```
 
 2. Create a new type and implement 
