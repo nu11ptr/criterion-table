@@ -1,4 +1,5 @@
-comments = """
+[top_comments]
+Overview = """
 This benchmark comparison report shows the difference in performance between iterative (`fib_iter`) and recursive
 (`fib_recur`) fibonacci functions.
 """

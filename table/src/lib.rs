@@ -146,7 +146,7 @@ impl RawCriterionData {
 /// Configuration file format for adding comments to tables
 pub struct TablesConfig {
     /// Top level comments
-    pub comments: Option<FlexStr>,
+    pub top_comments: IndexMap<FlexStr, FlexStr>,
     /// Per table comments (table -> comment)
     pub table_comments: HashMap<FlexStr, FlexStr>,
 }
@@ -265,7 +265,7 @@ impl ToFlexStr for TimeUnit {
     }
 }
 
-// ### Percent ###
+// ### Comparison ###
 
 /// A comparison time of a benchmark to its baseline
 #[derive(Clone, Copy, Debug, Default)]
@@ -508,7 +508,7 @@ impl CriterionTableData {
 
         // Start of doc
         let table_names: Vec<_> = self.tables.keys().collect();
-        f.start(&mut buffer, config.comments.as_ref(), &table_names);
+        f.start(&mut buffer, &config.top_comments, &table_names);
 
         for table in self.tables.values() {
             let col_info = &table.columns.0;
@@ -556,9 +556,14 @@ impl CriterionTableData {
 
 /// Implement this "visitor" trait to create a `Formatter` for a new file type
 pub trait Formatter {
-    /// Called first at the start of output. Has top level `comment`, if any, and a slice of table
+    /// Called first at the start of output. Passed top level `top_comments` and a slice of table
     /// names (typically used to build a table of contents)
-    fn start(&mut self, buffer: &mut String, comment: Option<&FlexStr>, tables: &[&FlexStr]);
+    fn start(
+        &mut self,
+        buffer: &mut String,
+        top_comments: &IndexMap<FlexStr, FlexStr>,
+        tables: &[&FlexStr],
+    );
 
     /// Called last after all processing is done
     fn end(&mut self, buffer: &mut String);

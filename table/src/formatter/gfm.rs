@@ -1,5 +1,6 @@
 use crate::{ColumnInfo, Comparison, Formatter, TimeUnit};
 use flexstr::{flex_fmt, FlexStr, IntoFlex, ToCase, ToFlexStr};
+use indexmap::IndexMap;
 
 const CT_URL: &str = "https://github.com/nu11ptr/criterion-table";
 
@@ -26,32 +27,60 @@ impl GFMFormatter {
     }
 
     #[inline]
-    fn encode_link(s: &FlexStr) -> FlexStr {
+    fn encode_link(s: &str) -> FlexStr {
         s.replace(' ', "-").into_flex().to_lower()
+    }
+
+    fn write_toc_entry(buffer: &mut String, entry: &str, indent: bool) {
+        if indent {
+            buffer.push_str("    ");
+        }
+        buffer.push_str("- [");
+        buffer.push_str(entry);
+        buffer.push_str("](#");
+        buffer.push_str(&Self::encode_link(entry));
+        buffer.push_str(")\n");
     }
 }
 
 impl Formatter for GFMFormatter {
-    fn start(&mut self, buffer: &mut String, comment: Option<&FlexStr>, tables: &[&FlexStr]) {
+    fn start(
+        &mut self,
+        buffer: &mut String,
+        top_comments: &IndexMap<FlexStr, FlexStr>,
+        tables: &[&FlexStr],
+    ) {
         buffer.push_str("# Benchmarks\n\n");
+        buffer.push_str("## Table of Contents\n\n");
 
-        if let Some(comments) = comment {
-            buffer.push_str(comments);
-            buffer.push('\n');
+        // Write each ToC entry in comments
+        for section_entry in top_comments.keys() {
+            Self::write_toc_entry(buffer, section_entry, false);
         }
 
-        for &table in tables {
-            buffer.push_str("- [");
-            buffer.push_str(table);
-            buffer.push_str("](#");
-            buffer.push_str(&Self::encode_link(table));
-            buffer.push_str(")\n");
+        Self::write_toc_entry(buffer, "Benchmark Results", false);
+
+        // Write each Benchmark ToC entry
+        for &table_entry in tables {
+            Self::write_toc_entry(buffer, table_entry, true);
         }
 
         buffer.push('\n');
+
+        // Write out all the comment sections and comments
+        for (header, comment) in top_comments {
+            buffer.push_str("## ");
+            buffer.push_str(header);
+            buffer.push_str("\n\n");
+            buffer.push_str(comment);
+            buffer.push('\n');
+        }
+
+        buffer.push_str("## Benchmark Results\n\n");
     }
 
     fn end(&mut self, buffer: &mut String) {
+        buffer.push_str("---\n");
         buffer.push_str("Made with [criterion-table](");
         buffer.push_str(CT_URL);
         buffer.push_str(")\n");
@@ -66,7 +95,7 @@ impl Formatter for GFMFormatter {
     ) {
         // *** Title ***
 
-        buffer.push_str("## ");
+        buffer.push_str("### ");
         buffer.push_str(name);
         buffer.push_str("\n\n");
 

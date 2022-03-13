@@ -10,9 +10,11 @@ output.
 Currently, the tool is limited to Github Flavored Markdown (GFM), but adding 
 new output types is relatively simple.
 
-## Generated Markdown Example
+## Generated Markdown Examples
 
-[Benchmark Report](example/README.md)
+[Very Basic Report](example/README.md)
+
+[FlexStr Benchmark Report](https://github.com/nu11ptr/flexstr/blob/master/benchmarks/README.md)
 
 ## Installation
 
@@ -107,7 +109,8 @@ Table names are in lowercase and spaces replaced with dashes. The file must
 be in the local directory. Here is an example:
 
 ```toml
-comments = """
+[top_comments]
+Overview = """
 This is a benchmark comparison report.
 """
 
@@ -149,11 +152,14 @@ cat iterative_fib.json recursive_fib.json | criterion-table > BENCHMARKS.md
 Currently, the tool is hardcoded to GFM, but it is easy to add a new output 
 type via the `Formatter` trait by creating your own new binary project
 
-1. Add this crate to your binary project as a library
+1. Add this crate, [FlexStr](https://github.com/nu11ptr/flexstr), and 
+   IndexMap to your binary project
 
 ```toml
 [dependencies]
-criterion-table = "0.3"
+criterion-table = "0.4"
+flexstr = "0.8"
+indexmap = "1"
 ```
 
 2. Create a new type and implement 
