@@ -14,7 +14,7 @@
 /// This module holds the various formatters that can be used to format the output
 pub mod formatter;
 
-use std::cmp::max;
+use std::cmp::{max, Ordering};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader, ErrorKind, Read};
@@ -268,7 +268,7 @@ impl ToFlexStr for TimeUnit {
 // ### Comparison ###
 
 /// A comparison time of a benchmark to its baseline
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd)]
 pub struct Comparison(f64);
 
 impl Comparison {
@@ -288,6 +288,20 @@ impl ToFlexStr for Comparison {
         } else {
             flex_fmt!("{:.2}x", self.0)
         }
+    }
+}
+
+impl PartialEq<f64> for Comparison {
+    #[inline]
+    fn eq(&self, other: &f64) -> bool {
+        f64::eq(&self.0, other)
+    }
+}
+
+impl PartialOrd<f64> for Comparison {
+    #[inline]
+    fn partial_cmp(&self, other: &f64) -> Option<Ordering> {
+        f64::partial_cmp(&self.0, other)
     }
 }
 

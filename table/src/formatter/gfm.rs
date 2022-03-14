@@ -8,7 +8,7 @@ const CT_URL: &str = "https://github.com/nu11ptr/criterion-table";
 // Width of making a single item bold
 const FIRST_COL_EXTRA_WIDTH: usize = "**``**".len();
 // Width of a single item in bold (italics is less) + one item in back ticks + one item in parens + one space
-// NOTE: Added two more "X" because we added unicode check and x that won't be 1 byte each
+// NOTE: Added one more "X" because we added unicode check, x, and rocket (uses only 1 per cell) that won't be 1 byte each
 const USED_EXTRA_WIDTH: usize = "() ``****XX".len();
 
 // *** GFM Formatter ***
@@ -173,14 +173,17 @@ impl Formatter for GFMFormatter {
     ) {
         let (time_str, speedup_str) = (time.to_flex_str(), compare.to_flex_str());
 
-        // Positive = bold
-        let data = if speedup_str.contains("faster") {
+        let data = if compare >= 2.0 {
+            // Positive = bold
+            flex_fmt!("`{time_str}` (🚀 **{speedup_str}**)")
+        } else if compare > 1.0 {
+            // Positive = bold
             flex_fmt!("`{time_str}` (✅ **{speedup_str}**)")
+        } else if compare < 1.0 {
             // Negative = italics
-        } else if speedup_str.contains("slower") {
             flex_fmt!("`{time_str}` (❌ *{speedup_str}*)")
-            // Even = no special formatting
         } else {
+            // Even = no special formatting
             flex_fmt!("`{time_str}` ({speedup_str})")
         };
 

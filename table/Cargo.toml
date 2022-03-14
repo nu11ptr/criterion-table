@@ -1,6 +1,6 @@
 [package]
 name = "criterion-table"
-version = "0.4.0"
+version = "0.4.1"
 authors = ["Scott Meeuwsen <smeeuwsen@gmail.com>"]
 license = "MIT OR Apache-2.0"
 description = "Generate markdown comparison tables from cargo-criterion benchmark output"
