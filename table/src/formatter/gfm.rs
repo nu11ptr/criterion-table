@@ -173,13 +173,16 @@ impl Formatter for GFMFormatter {
     ) {
         let (time_str, speedup_str) = (time.to_flex_str(), compare.to_flex_str());
 
-        let data = if compare >= 2.0 {
+        // Allow 10% wiggle room to qualify
+        let data = if compare >= 1.8 {
             // Positive = bold
             flex_fmt!("`{time_str}` (🚀 **{speedup_str}**)")
-        } else if compare > 1.0 {
+        // Allow 10% wiggle room to qualify
+        } else if compare > 0.9 {
             // Positive = bold
             flex_fmt!("`{time_str}` (✅ **{speedup_str}**)")
-        } else if compare < 1.0 {
+        // Allow 10% wiggle room
+        } else if compare < 0.9 {
             // Negative = italics
             flex_fmt!("`{time_str}` (❌ *{speedup_str}*)")
         } else {
